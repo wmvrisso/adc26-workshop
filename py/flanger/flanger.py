@@ -133,10 +133,33 @@ class LFO:
 
 class Flanger:
     def __init__(self, sample_rate):
-        pass
+        self.max_delay = int(0.002 * sample_rate)
+        # Delays up to and including max_delay must be readable, hence the + 1.
+        self.delay_line = FractionalDelayLine(self.max_delay + 1)
+        self.middle_delay = self.max_delay / 2
+        self.feedback = 0.7
+        self.feedforward = 0.7
+        self.blend = 0.7
+        self.lfo = LFO(sample_rate)
+        self.lfo.set_frequency(2)
 
     def process_sample(self, input_sample):
-        return input_sample
+        # m = s_LFO,unipolar[n] * D
+        lfo_unipolar = 0.5 * (self.lfo.get_next_value() + 1)
+        modulated_delay = lfo_unipolar * self.max_delay
+
+        # x_h[n] = x[n] + feedback * x_h[n - D/2]
+        # Delay 0 marks the last written sample, which is x_h[n - 1] at this point.
+        x = input_sample
+        x_h = x + self.feedback * self.delay_line.pop_sample(self.middle_delay - 1)
+
+        # x_h[n] is written first so that m = 0 can read it with delay 0.
+        self.delay_line.push_sample(x_h)
+
+        # y[n] = blend * x_h[n] + feedforward * x_h[n - m]
+        return self.blend * x_h + self.feedforward * self.delay_line.pop_sample(
+            modulated_delay
+        )
 
 
 def apply_flanger(samples, sample_rate):

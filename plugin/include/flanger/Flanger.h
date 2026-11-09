@@ -5,7 +5,8 @@ template <typename SampleType>
 class Flanger {
 public:
   void prepare(const juce::dsp::ProcessSpec& spec) {
-    juce::ignoreUnused(spec);
+    maxDelay_ = std::floor(static_cast<SampleType>(0.002 * spec.sampleRate));
+    middleDelay_ = maxDelay_ / SampleType{2};
 
     reset();
   }
@@ -41,10 +42,28 @@ public:
     }
   }
 
-  SampleType processSample(SampleType sample) { return sample; }
+  SampleType processSample(SampleType sample) {
+    // x_h[n] = x[n] + feedback * x_h[n - D/2]
+    // Delay 0 marks the last written sample, which is x_h[n - 1] at this point.
+    const auto helperSample =
+        sample + feedback_ * delayLine_.popSample(middleDelay_ - SampleType{1});
 
-  void reset() {}
+    // x_h[n] is written first so that the output tap can read it with delay 0.
+    delayLine_.pushSample(helperSample);
+
+    // y[n] = blend * x_h[n] + feedforward * x_h[n - D/2]
+    return blend_ * helperSample +
+           feedforward_ * delayLine_.popSample(middleDelay_);
+  }
+
+  void reset() { delayLine_.reset(); }
 
 private:
+  SampleType feedforward_{0.7f};
+  SampleType feedback_{0.7f};
+  SampleType blend_{0.7f};
+  SampleType maxDelay_{0};
+  SampleType middleDelay_{0};
+  FractionalDelayLine delayLine_;
 };
 }  // namespace audio_plugin

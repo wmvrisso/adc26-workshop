@@ -14,6 +14,17 @@ namespace id {
 static const juce::ParameterID LFO_FREQUENCY_HZ{"lfoFrequencyHz", 1};
 }
 
+namespace {
+juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
+  juce::AudioProcessorValueTreeState::ParameterLayout layout;
+  addToLayout<juce::AudioParameterFloat>(
+      layout, id::LFO_FREQUENCY_HZ, "LFO frequency",
+      juce::NormalisableRange<float>{0.01f, 10.f, 0.01f}, 2.f,
+      juce::AudioParameterFloatAttributes{}.withLabel("Hz"));
+  return layout;
+}
+}  // namespace
+
 AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     : AudioProcessor(
           BusesProperties()
@@ -23,7 +34,10 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
 #endif
               .withOutput("Output", juce::AudioChannelSet::stereo(), true)
 #endif
-      ) {
+              ),
+      apvts_{*this, nullptr, "APVTS", createParameterLayout()},
+      lfoFrequencyHz_{
+          apvts_.getRawParameterValue(id::LFO_FREQUENCY_HZ.getParamID())} {
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor() = default;
@@ -136,8 +150,10 @@ void AudioPluginAudioProcessor::processBlock(
     buffer.clear(i, 0, buffer.getNumSamples());
   }
 
-  auto audioBlock =
-      juce::dsp::AudioBlock<SampleType>{buffer}.getSingleChannelBlock(0u);
+  *flanger_.state = Flanger<SampleType>::Parameters{
+      .lfoFrequency = wolfsound::Frequency{lfoFrequencyHz_->load()}};
+
+  juce::dsp::AudioBlock<SampleType> audioBlock{buffer};
   flanger_.process(juce::dsp::ProcessContextReplacing<SampleType>{audioBlock});
 }
 
@@ -146,19 +162,7 @@ bool AudioPluginAudioProcessor::hasEditor() const {
 }
 
 juce::AudioProcessorEditor* AudioPluginAudioProcessor::createEditor() {
-  struct EmptyEditor final : juce::AudioProcessorEditor {
-    explicit EmptyEditor(AudioPluginAudioProcessor& p)
-        : juce::AudioProcessorEditor(p) {
-      setSize(400, 300);
-    }
-
-    void paint(juce::Graphics& g) override {
-      g.fillAll(getLookAndFeel().findColour(
-          juce::ResizableWindow::backgroundColourId));
-    }
-  };
-
-  return new EmptyEditor(*this);
+  return new juce::GenericAudioProcessorEditor(*this);
 }
 
 void AudioPluginAudioProcessor::getStateInformation(

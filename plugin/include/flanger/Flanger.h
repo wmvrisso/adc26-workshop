@@ -4,13 +4,30 @@ namespace audio_plugin {
 template <typename SampleType>
 class Flanger {
 public:
+  struct Parameters {
+    using Ptr = std::shared_ptr<Parameters>;
+
+    wolfsound::Frequency lfoFrequency = wolfsound::Frequency{2.f};
+  };
+
+  Flanger() = default;
+
+  explicit Flanger(typename Parameters::Ptr parameters)
+      : parameters_{std::move(parameters)} {}
+
+  void setParameters(const Parameters& parameters) {
+    lfo_.setFrequency(parameters.lfoFrequency.value());
+  }
+
   void prepare(const juce::dsp::ProcessSpec& spec) {
     constexpr auto MAX_DELAY_SECONDS = 0.002;
     maxDelay_ =
         static_cast<SampleType>(std::ceil(spec.sampleRate * MAX_DELAY_SECONDS));
     middleDelay_ = maxDelay_ / SampleType(2);
 
+    lfo_.prepare(spec);
     reset();
+    lfo_.setFrequency(parameters_->lfoFrequency.value(), true);
   }
 
   template <class ProcessContext>
@@ -34,6 +51,8 @@ public:
       return;
     }
 
+    setParameters(*parameters_);
+
     // Process samples one by one, at least initially.
     using namespace std::views;
     constexpr auto CHANNEL = 0u;
@@ -48,7 +67,10 @@ public:
     const auto& x = sample;
     const auto xh = x + feedback_ * delayLine_.popSample(middleDelay_);
 
-    const auto currentDelay = maxDelay_;
+    // juce::dsp::Oscillator adds the generated sample to its input.
+    const auto lfoValue = lfo_.processSample(SampleType(0));
+    const auto lfoUnipolar = SampleType(0.5) * (lfoValue + SampleType(1));
+    const auto currentDelay = lfoUnipolar * maxDelay_;
 
     const auto y =
         blend_ * xh + feedforward_ * delayLine_.popSample(currentDelay);
@@ -58,7 +80,10 @@ public:
     return y;
   }
 
-  void reset() { delayLine_.reset(); }
+  void reset() {
+    delayLine_.reset();
+    lfo_.reset();
+  }
 
 private:
   SampleType feedforward_ = SampleType(0.7);
@@ -67,5 +92,8 @@ private:
   FractionalDelayLine delayLine_;
   SampleType maxDelay_{};
   SampleType middleDelay_{};
+  juce::dsp::Oscillator<SampleType> lfo_{
+      [](SampleType x) { return std::sin(x); }};
+  typename Parameters::Ptr parameters_ = std::make_shared<Parameters>();
 };
 }  // namespace audio_plugin

@@ -36,7 +36,11 @@ public:
   void setStateInformation(const void* data, int sizeInBytes) override;
 
 private:
-  Flanger<SampleType> flanger_;
+  juce::AudioProcessorValueTreeState apvts_;
+  std::atomic<float>* lfoFrequencyHz_ = nullptr;
+  juce::dsp::ProcessorDuplicator<Flanger<SampleType>,
+                                 Flanger<SampleType>::Parameters>
+      flanger_;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
 };
